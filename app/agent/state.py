@@ -6,7 +6,7 @@ from typing import List, Dict, Any, Optional, Annotated
 from typing_extensions import TypedDict
 import operator
 
-from app.models.schemas import Plan, Task, ResearchEvidence, ResearchReport
+from app.models.schemas import GoalAnalysis, Plan, Task, ResearchReport
 
 
 class ResearchAgentState(TypedDict):
@@ -15,6 +15,9 @@ class ResearchAgentState(TypedDict):
     """
     # User input
     query: str
+
+    # Goal analysis breakdown
+    goal_analysis: Optional[GoalAnalysis]
 
     # Planning & task execution state
     plan: Optional[Plan]

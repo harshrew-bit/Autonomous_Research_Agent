@@ -1,5 +1,5 @@
 """
-Pydantic schemas and data types defining state, tasks, plans, tool IO, and output reports.
+Pydantic schemas and data types defining state, goal analysis, tasks, plans, tool IO, and output reports.
 """
 
 from enum import Enum
@@ -15,10 +15,39 @@ class TaskStatus(str, Enum):
     RETRYING = "retrying"
 
 
+class GoalAnalysis(BaseModel):
+    """Structured breakdown of a user's high-level research goal."""
+    objective: str = Field(description="Primary objective of the research request")
+    topic: str = Field(description="Core domain or subject matter of the research")
+    constraints: List[str] = Field(
+        default_factory=list,
+        description="Boundaries, filters, or specific scope limits (e.g. timeframes, level of detail)"
+    )
+    time_range: Optional[str] = Field(
+        default=None,
+        description="Temporal boundary if specified in the user request (e.g. 'last 7 days')"
+    )
+    output_requirements: List[str] = Field(
+        default_factory=list,
+        description="Required format, deliverables, or key sections requested"
+    )
+    success_criteria: List[str] = Field(
+        default_factory=list,
+        description="Specific verification criteria to determine when the research is complete"
+    )
+
+
 class Task(BaseModel):
+    """An individual task within an autonomous execution plan."""
     id: str = Field(description="Unique identifier for the task, e.g. task_1")
-    description: str = Field(description="High-level goal or query for this specific task")
-    tool_name: str = Field(description="Name of the tool selected for this task")
+    description: str = Field(description="Clear action-oriented task description")
+    objective: str = Field(default="", description="Specific sub-goal this task aims to accomplish")
+    expected_output: str = Field(default="", description="Description of expected deliverable/data from this step")
+    suggested_tool: str = Field(description="Name of the tool suggested for executing this step")
+    dependencies: List[str] = Field(
+        default_factory=list,
+        description="IDs of prerequisite tasks that must be completed before this step"
+    )
     tool_input: Dict[str, Any] = Field(default_factory=dict, description="Input parameters passed to the tool")
     status: TaskStatus = Field(default=TaskStatus.PENDING, description="Current execution status")
     result: Optional[Any] = Field(default=None, description="Observed output from tool execution")
@@ -27,8 +56,9 @@ class Task(BaseModel):
 
 
 class Plan(BaseModel):
+    """Dynamically generated sequence of tasks to achieve the user's research goal."""
     query: str = Field(description="Original research topic or query submitted by user")
-    rationale: str = Field(description="LLM explanation of why this decomposition plan was chosen")
+    rationale: str = Field(description="Explanation of why this dynamic plan decomposition was selected")
     tasks: List[Task] = Field(default_factory=list, description="Sequence of subtasks to execute")
     current_task_index: int = Field(default=0, description="Index of task currently under execution")
 

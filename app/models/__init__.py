@@ -4,6 +4,7 @@ Data models and Pydantic schemas for the agentic application.
 
 from app.models.schemas import (
     TaskStatus,
+    GoalAnalysis,
     Task,
     Plan,
     SearchResultItem,
@@ -14,6 +15,7 @@ from app.models.schemas import (
 
 __all__ = [
     "TaskStatus",
+    "GoalAnalysis",
     "Task",
     "Plan",
     "SearchResultItem",

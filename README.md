@@ -4,19 +4,17 @@
 
 ## Overview
 
-The **Autonomous Research Agent** is designed to accept high-level research queries, autonomously formulate multi-step execution plans, dynamically select appropriate research tools, evaluate step results, detect failures/gaps, and gracefully adapt or replan until a structured final synthesis is produced.
-
-Unlike fixed-pipeline scrapers, this system treats research as an iterative, graph-driven problem-solving loop with visible execution traces and robust error recovery mechanisms.
+The **Autonomous Research Agent** accepts high-level user research queries, extracts structured goal parameters, autonomously formulates dynamic execution plans, and presents a visible planning trace before executing tools.
 
 ---
 
-## Architectural Principles
+## Architectural Principles (Phase 2)
 
-1. **Dynamic Decomposition & Planning**: The agent analyzes high-level user queries and constructs an initial plan (array of concrete tasks). It does not follow a rigid `search -> fetch -> summarize` script.
-2. **State Machine Orchestration (LangGraph)**: Uses LangGraph to manage cyclical state updates (`Planner -> Executor -> Evaluator -> Replanner/Finalizer`).
-3. **Tool Isolation & Heterogeneity**: Tools (Web Search, Page Fetcher, Report Writer) are self-contained modules returning typed, validated data schemas.
-4. **Active Reflection & Recovery**: An Evaluator node checks output quality, detects HTTP/content errors, deduplicates knowledge, and triggers replanning or retries upon failure.
-5. **Deterministic Infrastructure, Reasoning Core**: Network requests, validation, parsing, logging, and deduplication run deterministically, while plan generation and content synthesis rely on LLM reasoning.
+1. **LLM Provider Abstraction (`app/agent/llm.py`)**: Provider-agnostic interface (`LLMProvider`) supporting Google Gemini (`GeminiProvider`) and deterministic mock backends (`MockLLMProvider`) for offline testing without API keys.
+2. **Goal Analysis (`app/agent/planner.py`)**: High-level goal breakdown extracting objective, domain topic, scope constraints, time boundaries, output requirements, and success criteria.
+3. **Dynamic Decomposition & Planning**: The LLM dynamically constructs tailored task sequences with sub-objectives, tool recommendations, and dependencies based on user intent.
+4. **Structured Validation & Recovery**: Uses Pydantic schema validation for LLM outputs with bounded retry recovery.
+5. **Visible Planning Trace (`app/utils/logging.py`)**: Renders clean, user-facing goal breakdowns and step execution tables using `Rich`.
 
 ---
 
@@ -29,108 +27,80 @@ Unlike fixed-pipeline scrapers, this system treats research as an iterative, gra
                                 |
                                 v
                       +-------------------+
-                      |   Planner Node    |
+                      |   analyze_goal    |
                       +---------+---------+
                                 |
                                 v
-                     +---------------------+
-                     |    Executor Node    | <---+ (Retry / Next Step)
-                     |  (Tool Invocation)  |     |
-                     +----------+----------+     |
-                                |                |
-                                v                |
-                     +---------------------+     |
-                     |   Evaluator Node    |-----+
-                     | (Reflection & Check)|
-                     +----------+----------+
+                      +-------------------+
+                      |   generate_plan   |
+                      +---------+---------+
                                 |
-                +---------------+---------------+
-                | (Success / Goals Met)        | (Failure / Gap Detected)
-                v                               v
-    +-----------------------+       +----------------------+
-    | Report Synthesis Node |       |   Replanner Node     |
-    +-----------+-----------+       +----------+-----------+
-                |                              |
-                v                              +---> Loop back to Executor
-    +-----------------------+
-    | Final Structured Output|
-    +-----------------------+
-```
-
----
-
-## Project Structure
-
-```
-autonomous-research-agent/
-│
-├── app/
-│   ├── agent/             # LangGraph state machine & reasoning nodes
-│   │   ├── __init__.py
-│   │   ├── state.py       # Pydantic & TypedDict state definitions
-│   │   ├── graph.py       # LangGraph state graph assembly
-│   │   ├── planner.py     # Plan formulation & decomposition node
-│   │   └── evaluator.py   # Step evaluation & quality reflection node
-│   │
-│   ├── tools/             # Distinct external tools
-│   │   ├── __init__.py
-│   │   ├── web_search.py   # Live web search tool
-│   │   ├── page_fetcher.py # Web page content extractor & parser
-│   │   └── report_writer.py# Markdown/PDF report exporter
-│   │
-│   ├── models/            # Shared data models & Pydantic schemas
-│   │   ├── __init__.py
-│   │   └── schemas.py     # Plan, Task, Evidence, and Summary schemas
-│   │
-│   ├── utils/             # Infrastructure utilities
-│   │   ├── __init__.py
-│   │   ├── logging.py     # Console tracing & execution logger
-│   │   └── deduplication.py# Text hashing & semantic deduplication
-│   │
-│   └── main.py            # CLI entry point
-│
-├── tests/
-│   ├── __init__.py
-│   └── test_smoke.py      # Environment & module import smoke tests
-│
-├── docs/                  # Architecture & design documentation
-├── examples/              # Sample run transcripts & trace logs
-├── reports/               # Default output directory for generated reports
-│
-├── .env.example           # Template for API keys & config
-├── .gitignore             # Git ignore rule file
-├── README.md              # Project documentation
-├── requirements.txt       # Frozen dependencies list
-└── pyproject.toml         # Package definition & pytest config
+                                v
+                      +-------------------+
+                      | Visible Trace CLI |
+                      +-------------------+
 ```
 
 ---
 
 ## Installation & Setup
 
-### 1. Clone & Navigate
-```bash
-cd Autonomous_Research_Agent
-```
-
-### 2. Create Virtual Environment & Install Dependencies
+### 1. Virtual Environment & Dependencies
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 3. Environment Configuration
-Copy the example environment file and fill in your API credentials:
+### 2. Environment Configuration
+Copy `.env.example` to `.env` and set your preferred LLM provider:
+
 ```bash
 cp .env.example .env
+```
+
+To run with live Google Gemini:
+```env
+LLM_PROVIDER=gemini
+GEMINI_API_KEY=your_actual_gemini_api_key
+GEMINI_MODEL=gemini-2.5-flash
+```
+
+To run offline without API keys (using Mock provider):
+```env
+LLM_PROVIDER=mock
+```
+
+---
+
+## Running the Planner (CLI)
+
+### Test A: Research Query
+```bash
+python app/main.py "Research the latest developments in Agentic AI"
+```
+
+### Test B: Framework Comparison Query
+```bash
+python app/main.py "Compare the current leading Python web frameworks for a beginner building an API"
+```
+
+### Test C: RAG Advances Query
+```bash
+python app/main.py "Find recent developments in RAG and identify practical applications for software engineering"
+```
+
+### Force Mock Mode via CLI Flag
+```bash
+python app/main.py "Research quantum computing" --provider mock
 ```
 
 ---
 
 ## Running Tests
 
-Verify project structure and basic import integrity:
+Run the full pytest suite (no API keys required):
+
 ```bash
 pytest
 ```
