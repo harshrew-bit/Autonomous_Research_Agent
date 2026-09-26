@@ -40,6 +40,28 @@ class LLMProvider(ABC):
         """
         pass
 
+    @abstractmethod
+    async def synthesize_research_report(
+        self,
+        research_question: str,
+        goal_analysis: Optional[Any],
+        evidence: List[Any],
+        sources: List[Dict[str, Any]],
+    ) -> Any:
+        """
+        Synthesizes a structured ResearchReport from gathered evidence items.
+
+        Args:
+            research_question: User's original research prompt.
+            goal_analysis: Structured goal analysis breakdown.
+            evidence: List of relevant, deduplicated EvidenceItem instances.
+            sources: List of source metadata dictionaries.
+
+        Returns:
+            Structured ResearchReport instance.
+        """
+        pass
+
 
 class GeminiProvider(LLMProvider):
     """Google Gemini LLM provider implementation using official google-genai SDK."""
@@ -111,6 +133,43 @@ class GeminiProvider(LLMProvider):
         raise RuntimeError(
             f"Failed to generate valid {response_schema.__name__} after {retry_limit + 1} attempts. Last error: {last_error}"
         )
+
+    async def synthesize_research_report(
+        self,
+        research_question: str,
+        goal_analysis: Optional[Any],
+        evidence: List[Any],
+        sources: List[Dict[str, Any]],
+    ) -> Any:
+        from app.models.schemas import ResearchReport
+        evidence_text = "\n\n".join(
+            f"Source URL: {getattr(e, 'source_url', '')}\n"
+            f"Title: {getattr(e, 'source_title', '')}\n"
+            f"Claim: {getattr(e, 'claim', '')}\n"
+            f"Supporting Text: {getattr(e, 'supporting_text', '')}\n"
+            f"Relevance: {getattr(e, 'relevance_score', 1.0)}"
+            for e in evidence
+        )
+        sources_text = "\n".join(
+            f"- {s.get('title', 'Unknown')}: {s.get('url', '')}"
+            for s in sources
+        )
+        prompt = (
+            f"Synthesize a rigorous, objective final Research Report answering this research question:\n"
+            f"\"{research_question}\"\n\n"
+            f"Gathered Evidence Items ({len(evidence)} total):\n{evidence_text or 'No direct evidence chunks gathered.'}\n\n"
+            f"Identified Sources ({len(sources)} total):\n{sources_text or 'None.'}\n\n"
+            "Requirements:\n"
+            "1. Ground all key findings strictly in the provided evidence. Cite supporting source URLs.\n"
+            "2. Avoid fabricating facts, metrics, or citations.\n"
+            "3. If evidence is sparse, clearly explain the empirical limitations in the limitations field.\n"
+            "4. Provide practical, supported actionable insights."
+        )
+        system_instruction = (
+            "You are an expert autonomous research synthesis analyst. Your job is to produce a high-fidelity, "
+            "factually grounded research report using only retrieved evidence."
+        )
+        return await self.generate_structured(prompt, ResearchReport, system_instruction=system_instruction)
 
 
 class MockLLMProvider(LLMProvider):
@@ -211,8 +270,164 @@ class MockLLMProvider(LLMProvider):
                 rationale=rationale,
                 tasks=tasks,
             ) # type: ignore
+        elif schema.__name__ == "ResearchReport":
+            from app.models.schemas import ResearchReport, KeyFinding, SourceCitation
+            topic = "Autonomous Research"
+            if 'research question:\n"' in prompt:
+                try:
+                    topic = prompt.split('research question:\n"')[1].split('"')[0].strip()
+                except Exception:
+                    pass
+            elif len(prompt) < 100:
+                topic = prompt.strip()
+
+            findings = [
+                KeyFinding(
+                    claim=f"Autonomous tool orchestration significantly improves research fidelity for {topic}.",
+                    explanation=(
+                        f"Empirical observations confirm that proactive goal decomposition paired with dynamic tool invocation "
+                        f"allows autonomous agents to navigate complex information landscapes related to {topic}."
+                    ),
+                    supporting_source_urls=["https://example.com/research-1"],
+                ),
+                KeyFinding(
+                    claim="Multi-signal deduplication and relevance filtering prevent hallucinated citations.",
+                    explanation=(
+                        "Filtering low-relevance content blocks and clustering near-duplicate extracts eliminates redundant claims "
+                        "and establishes strict source attribution for all synthesized findings."
+                    ),
+                    supporting_source_urls=["https://example.com/research-2"],
+                ),
+            ]
+            citations = [
+                SourceCitation(
+                    url="https://example.com/research-1",
+                    title=f"Architectural Paradigms in {topic}",
+                    domain="example.com",
+                    relevant_excerpts_count=2,
+                ),
+                SourceCitation(
+                    url="https://example.com/research-2",
+                    title="Evaluation and Deduplication Frameworks",
+                    domain="example.com",
+                    relevant_excerpts_count=1,
+                ),
+            ]
+            return ResearchReport(
+                research_question=topic,
+                topic=topic,
+                executive_summary=(
+                    f"This report presents an evidence-backed synthesis of {topic}. "
+                    "Through systematic web exploration, selective content extraction, and multi-signal deduplication, "
+                    "the autonomous agent isolated key principles governing adaptive reasoning and empirical validation."
+                ),
+                key_findings=findings,
+                important_evidence=[],
+                sources=citations,
+                actionable_insights=[
+                    f"Adopt structured Pydantic schemas across all tool interfaces when researching {topic}.",
+                    "Implement lexical and content-hash deduplication before passing external observations to the synthesis layer.",
+                ],
+                limitations=[
+                    "Findings are bounded by the accessible public sources retrieved during the execution session.",
+                    "Live dynamic pages with client-side JavaScript execution may require headless browser rendering for deeper retrieval.",
+                ],
+            ) # type: ignore
 
         raise ValueError(f"No mock generator implemented for schema {schema.__name__}")
+
+    async def synthesize_research_report(
+        self,
+        research_question: str,
+        goal_analysis: Optional[Any],
+        evidence: List[Any],
+        sources: List[Dict[str, Any]],
+    ) -> Any:
+        from app.models.schemas import ResearchReport, KeyFinding, SourceCitation
+        # Extract unique sources from evidence
+        seen_urls = {}
+        for ev in evidence:
+            url = getattr(ev, "source_url", "")
+            title = getattr(ev, "source_title", "External Source")
+            domain = getattr(ev, "source_domain", None)
+            if not domain and "/" in url:
+                domain = url.split("/")[2]
+            if url:
+                if url not in seen_urls:
+                    seen_urls[url] = {"url": url, "title": title, "domain": domain or "web", "count": 0}
+                seen_urls[url]["count"] += 1
+
+        citations = [
+            SourceCitation(
+                url=data["url"],
+                title=data["title"],
+                domain=data["domain"],
+                relevant_excerpts_count=data["count"],
+            )
+            for data in seen_urls.values()
+        ]
+        if not citations and sources:
+            citations = [
+                SourceCitation(
+                    url=s.get("url", "https://example.com"),
+                    title=s.get("title", "Discovered Source"),
+                    domain=s.get("source", "web"),
+                    relevant_excerpts_count=1,
+                )
+                for s in sources[:3]
+            ]
+        if not citations:
+            citations = [
+                SourceCitation(
+                    url="https://example.com",
+                    title="Reference Overview",
+                    domain="example.com",
+                    relevant_excerpts_count=1,
+                )
+            ]
+
+        findings = []
+        for i, ev in enumerate(evidence[:4]):
+            findings.append(
+                KeyFinding(
+                    claim=getattr(ev, "claim", f"Simulated observation on '{research_question}'"),
+                    explanation=getattr(ev, "supporting_text", f"Mock context excerpt extracted for '{research_question}'"),
+                    supporting_source_urls=[getattr(ev, "source_url", "https://example.com")],
+                )
+            )
+
+        if not findings:
+            findings = [
+                KeyFinding(
+                    claim=f"Deterministic mock pipeline validated for query '{research_question}'.",
+                    explanation=f"Demonstration run executed using mock providers to verify goal decomposition and tool orchestration.",
+                    supporting_source_urls=[c.url for c in citations[:1]],
+                )
+            ]
+
+        topic_str = research_question.strip()
+
+        return ResearchReport(
+            research_question=research_question,
+            topic=topic_str,
+            executive_summary=(
+                f"This report presents a simulated synthesis for '{research_question}' generated in mock/demo execution mode. "
+                f"The analysis is deterministically grounded in {len(evidence)} mock evidence items extracted from test sources. "
+                "In production mode with live Gemini and Tavily API credentials, real-world web sources are retrieved, verified, and synthesized."
+            ),
+            key_findings=findings,
+            important_evidence=evidence[:5],
+            sources=citations,
+            actionable_insights=[
+                f"Execute with live SEARCH_PROVIDER=tavily and LLM_PROVIDER=gemini to conduct real-world research on '{research_question}'.",
+                "Maintain strict evidence schema validation and multi-signal deduplication to ensure traceability in production runs.",
+            ],
+            limitations=[
+                "SIMULATED EVALUATION: Report was generated using MockLLMProvider and MockSearchProvider for offline assessment demonstration.",
+                "No live external HTTP requests were dispatched to real-world knowledge repositories.",
+                "Empirical validity and real-world domain findings require live execution with authenticated provider API keys.",
+            ],
+        )
 
 
 def get_llm_provider(provider_type: Optional[str] = None) -> LLMProvider:

@@ -12,6 +12,7 @@ from app.models.schemas import (
     Task,
     SearchResultItem,
     FetchedPage,
+    EvidenceItem,
     ResearchEvidence,
     ResearchReport,
     Observation,
@@ -39,6 +40,8 @@ class ResearchAgentState(TypedDict):
     search_results: Annotated[List[SearchResultItem], operator.add]
     fetched_pages: Annotated[List[FetchedPage], operator.add]
     evidence: Annotated[List[Dict[str, Any]], operator.add]
+    evidence_items: Annotated[List[EvidenceItem], operator.add]
+    evidence_stats: Optional[Dict[str, int]]
     visited_urls: Annotated[List[str], operator.add]
 
     # Step execution observations & evaluations
@@ -58,3 +61,4 @@ class ResearchAgentState(TypedDict):
 
     # Final output artifact
     final_report: Optional[ResearchReport]
+    report_file_path: Optional[str]

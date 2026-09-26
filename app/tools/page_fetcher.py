@@ -252,11 +252,10 @@ async def fetch_page(
         if (os.getenv("SEARCH_PROVIDER") == "mock" or os.getenv("MOCK_PAGE_FETCHER") == "true") and any(h in url for h in ("example.com", "example.org", "example.net")):
             logger.info(f"[fetch_page] Offline fallback for {url}")
             mock_text = (
-                f"Autonomous Research Overview for '{url}'.\n\n"
-                "Key architectural insights highlight the transition toward proactive reasoning loops, "
-                "where language models iteratively decompose high-level goals into directed sub-queries, "
-                "inspect intermediate tool observations, and dynamically adjust execution paths upon encountering anomalies. "
-                "Empirical results indicate significant gains in problem resolution fidelity and task completion rates."
+                f"Simulated technical documentation and research background for {url}.\n\n"
+                "Systematic investigation of targeted domain methods indicates substantial progress in "
+                "algorithmic efficiency, operational reliability, and modular architectural design. "
+                "Comparative benchmark evaluations highlight quantitative performance gains across standardized task suites."
             )
             TraceLogger.print_tool_success("page_fetcher", f"Extracted {len(mock_text)} chars (offline mock for '{url}')")
             return FetchedPage(

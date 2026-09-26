@@ -92,6 +92,14 @@ class TraceLogger:
         console.print("  [dim]→ Executing...[/dim]")
 
     @staticmethod
+    def print_pipeline_stage(stage_name: str, description: str) -> None:
+        """Display distinct pipeline stage transition banner (e.g. Evidence Processing, Report Synthesis)."""
+        console.rule(style="dim cyan")
+        console.print(f"[bold cyan]▶ {stage_name}[/bold cyan]")
+        console.print(f"  [bold white]{description}[/bold white]")
+        console.print("  [dim]→ Processing...[/dim]")
+
+    @staticmethod
     def print_step_outcome(success: bool, summary: str) -> None:
         """Display concise step completion or failure."""
         if success:

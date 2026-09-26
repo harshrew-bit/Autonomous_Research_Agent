@@ -1,5 +1,5 @@
 """
-LangGraph state graph assembly for Phase 4 autonomous research execution loop.
+LangGraph state graph assembly for autonomous research execution, evidence processing, and synthesis.
 """
 
 from typing import Any
@@ -9,7 +9,12 @@ from app.agent.state import ResearchAgentState
 from app.agent.planner import analyze_goal, generate_plan, replan_research
 from app.agent.executor import execute_step
 from app.agent.evaluator import evaluate_step
+from app.agent.evidence import process_evidence_pipeline
+from app.agent.synthesizer import synthesize_report, export_report_artifact
 from app.models.schemas import DecisionType
+from app.utils.logging import get_logger
+
+logger = get_logger("graph")
 
 
 def route_evaluation(state: ResearchAgentState) -> str:
@@ -25,8 +30,31 @@ def route_evaluation(state: ResearchAgentState) -> str:
         return "execute_step"
     elif decision == DecisionType.REPLAN:
         return "replan_research"
+    elif decision == DecisionType.COMPLETE:
+        return "process_evidence"
     else:
+        # DecisionType.FAIL (e.g. step limit reached)
+        # If any search/pages were collected, proceed to process evidence & synthesize report with limitations
+        if state.get("search_results") or state.get("fetched_pages"):
+            return "process_evidence"
         return END
+
+
+def route_after_evidence(state: ResearchAgentState) -> str:
+    """
+    Routes from evidence processing: if evidence is insufficient and step budget remains,
+    triggers adaptive replanning; otherwise proceeds to report synthesis.
+    """
+    evidence_items = state.get("evidence_items", [])
+    step_count = state.get("step_count", 0)
+    max_steps = state.get("max_steps", 10)
+
+    # If zero evidence items and step budget remains, trigger replan
+    if len(evidence_items) == 0 and step_count < max_steps - 1:
+        logger.info("[graph] Insufficient evidence collected; routing back to replan_research.")
+        return "replan_research"
+
+    return "synthesize_report"
 
 
 def build_research_graph() -> Any:
@@ -41,7 +69,18 @@ def build_research_graph() -> Any:
                                                     | (replan)
                                                     v
                                              replan_research ----> execute_step
-                                                    | (complete / fail)
+                                                    | (complete)
+                                                    v
+                                             process_evidence
+                                                    | (insufficient evidence & budget remains)
+                                                    +-----> replan_research
+                                                    | (sufficient evidence or budget limit)
+                                                    v
+                                             synthesize_report
+                                                    |
+                                                    v
+                                             export_report
+                                                    |
                                                     v
                                                    END
     """
@@ -53,6 +92,9 @@ def build_research_graph() -> Any:
     workflow.add_node("execute_step", execute_step)
     workflow.add_node("evaluate_step", evaluate_step)
     workflow.add_node("replan_research", replan_research)
+    workflow.add_node("process_evidence", process_evidence_pipeline)
+    workflow.add_node("synthesize_report", synthesize_report)
+    workflow.add_node("export_report", export_report_artifact)
 
     # 2. Add sequential transitions
     workflow.add_edge(START, "analyze_goal")
@@ -60,6 +102,8 @@ def build_research_graph() -> Any:
     workflow.add_edge("generate_plan", "execute_step")
     workflow.add_edge("execute_step", "evaluate_step")
     workflow.add_edge("replan_research", "execute_step")
+    workflow.add_edge("synthesize_report", "export_report")
+    workflow.add_edge("export_report", END)
 
     # 3. Add conditional routing from evaluation node
     workflow.add_conditional_edges(
@@ -68,7 +112,18 @@ def build_research_graph() -> Any:
         {
             "execute_step": "execute_step",
             "replan_research": "replan_research",
+            "process_evidence": "process_evidence",
             END: END,
+        }
+    )
+
+    # 4. Add conditional routing from evidence processing node
+    workflow.add_conditional_edges(
+        "process_evidence",
+        route_after_evidence,
+        {
+            "replan_research": "replan_research",
+            "synthesize_report": "synthesize_report",
         }
     )
 

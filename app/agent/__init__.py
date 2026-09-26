@@ -6,6 +6,8 @@ from app.agent.state import ResearchAgentState
 from app.agent.planner import analyze_goal, generate_plan, plan_research, replan_research
 from app.agent.executor import execute_step
 from app.agent.evaluator import evaluate_step, evaluate_step_result
+from app.agent.evidence import process_evidence_pipeline
+from app.agent.synthesizer import synthesize_report, export_report_artifact
 from app.agent.graph import build_research_graph
 
 __all__ = [
@@ -17,5 +19,8 @@ __all__ = [
     "execute_step",
     "evaluate_step",
     "evaluate_step_result",
+    "process_evidence_pipeline",
+    "synthesize_report",
+    "export_report_artifact",
     "build_research_graph",
 ]

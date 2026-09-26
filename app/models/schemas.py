@@ -135,18 +135,61 @@ class FetchedPage(BaseModel):
     )
 
 
+class EvidenceItem(BaseModel):
+    """A granular, traceable unit of research evidence extracted from an external source."""
+    source_url: str = Field(description="URL source of the evidence")
+    source_title: str = Field(description="Source document title")
+    source_domain: Optional[str] = Field(default=None, description="Extracted domain of source")
+    claim: str = Field(description="Atomic factual claim or statement")
+    supporting_text: str = Field(description="Verbatim or close context supporting the claim")
+    relevance_score: float = Field(default=1.0, ge=0.0, le=1.0, description="Relevance score [0.0 - 1.0]")
+    content_hash: str = Field(description="SHA-256 hash of claim and supporting text for deduplication")
+    evidence_type: str = Field(
+        default="empirical",
+        description="Type of evidence: empirical, statistical, architectural, benchmark, or theoretical"
+    )
+    extraction_reason: Optional[str] = Field(default=None, description="Rationale for extracting this excerpt")
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0, description="Extraction confidence score [0.0 - 1.0]")
+
+
 class ResearchEvidence(BaseModel):
-    """Structured evidence excerpt extracted from an external source."""
+    """Structured evidence excerpt extracted from an external source (legacy compatibility)."""
     source_url: str = Field(description="URL source of the evidence chunk")
     title: str = Field(description="Source document title")
     content_chunk: str = Field(description="Extracted relevant text excerpt")
     relevance_score: float = Field(default=1.0, description="Estimated relevance score [0.0 - 1.0]")
 
 
+class KeyFinding(BaseModel):
+    """A distinct factual finding derived from gathered research evidence."""
+    claim: str = Field(description="Core assertion or factual discovery")
+    explanation: str = Field(description="Contextual explanation and evidence synthesis")
+    supporting_source_urls: List[str] = Field(default_factory=list, description="Source URLs backing this finding")
+
+
+class SourceCitation(BaseModel):
+    """Traceable citation for a research source."""
+    url: str = Field(description="Canonical URL of source")
+    title: str = Field(description="Title of page or document")
+    domain: Optional[str] = Field(default=None, description="Domain name of source")
+    relevant_excerpts_count: int = Field(default=1, description="Number of evidence chunks extracted from source")
+
+
 class ResearchReport(BaseModel):
     """Final structured report synthesized at the conclusion of research."""
-    topic: str = Field(description="Main research topic")
-    key_points: List[str] = Field(default_factory=list, description="High-level bullet points")
-    important_findings: List[str] = Field(default_factory=list, description="Detailed discoveries and findings")
-    sources: List[str] = Field(default_factory=list, description="List of referenced URLs or sources")
-    actionable_insights: List[str] = Field(default_factory=list, description="Practical takeaways or recommendations")
+    research_question: str = Field(description="The primary research objective or user prompt")
+    topic: Optional[str] = Field(default=None, description="Main research topic")
+    executive_summary: str = Field(description="High-level synthesis and executive overview")
+    key_findings: List[KeyFinding] = Field(default_factory=list, description="Structured factual findings with citations")
+    important_evidence: List[EvidenceItem] = Field(default_factory=list, description="Curated list of key evidence items")
+    sources: List[SourceCitation] = Field(default_factory=list, description="List of referenced sources")
+    actionable_insights: List[str] = Field(default_factory=list, description="Practical takeaways, recommendations, or next steps")
+    limitations: List[str] = Field(default_factory=list, description="Uncertainties, conflicting evidence, or gaps in retrieved information")
+
+    @property
+    def key_points(self) -> List[str]:
+        return [f.claim for f in self.key_findings]
+
+    @property
+    def important_findings(self) -> List[str]:
+        return [f"{f.claim}: {f.explanation}" for f in self.key_findings]

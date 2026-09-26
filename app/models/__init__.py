@@ -14,6 +14,9 @@ from app.models.schemas import (
     SearchResultItem,
     SearchResponse,
     FetchedPage,
+    EvidenceItem,
+    KeyFinding,
+    SourceCitation,
     ResearchEvidence,
     ResearchReport,
 )
@@ -30,6 +33,9 @@ __all__ = [
     "SearchResultItem",
     "SearchResponse",
     "FetchedPage",
+    "EvidenceItem",
+    "KeyFinding",
+    "SourceCitation",
     "ResearchEvidence",
     "ResearchReport",
 ]

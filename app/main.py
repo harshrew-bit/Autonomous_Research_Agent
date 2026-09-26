@@ -81,6 +81,9 @@ async def run_agent(
     if simulate_failure and simulate_failure != "none":
         os.environ["SIMULATE_FAILURE"] = simulate_failure
 
+    if output_dir:
+        os.environ["OUTPUT_DIR"] = output_dir
+
     console.rule("[bold cyan]AUTONOMOUS RESEARCH AGENT[/bold cyan]")
     console.print(f"[bold white]User Research Query:[/bold white] {query}\n")
 
@@ -96,6 +99,8 @@ async def run_agent(
         "search_results": [],
         "fetched_pages": [],
         "evidence": [],
+        "evidence_items": [],
+        "evidence_stats": None,
         "visited_urls": [],
         "tool_results": [],
         "last_observation": None,
@@ -109,6 +114,7 @@ async def run_agent(
         "status": "planning",
         "error": None,
         "final_report": None,
+        "report_file_path": None,
     }
 
     logger.info("Executing LangGraph autonomous research loop...")
@@ -119,15 +125,35 @@ async def run_agent(
     status = final_state.get("status", "unknown")
     steps = final_state.get("step_count", 0)
     search_count = len(final_state.get("search_results", []))
-    evidence_count = len(final_state.get("evidence", []))
+    evidence_count = len(final_state.get("evidence_items", []))
+    ev_stats = final_state.get("evidence_stats") or {}
+    report = final_state.get("final_report")
+    report_path = final_state.get("report_file_path")
     replans = [e for e in final_state.get("execution_history", []) if e.get("event") == "replan"]
 
     console.rule(style="bold green")
     console.print(f"[bold green]EXECUTION SUMMARY[/bold green]")
     console.print(f"  • [bold]Status:[/bold] {status.upper()}")
-    console.print(f"  • [bold]Steps Executed:[/bold] {steps}/{max_steps}")
+    console.print(f"  • [bold]Research Execution Steps:[/bold] {steps}/{max_steps}")
     console.print(f"  • [bold]Search Results Acquired:[/bold] {search_count}")
-    console.print(f"  • [bold]Evidence Chunks Extracted:[/bold] {evidence_count}")
+    if ev_stats:
+        console.print(f"  • [bold cyan]Evidence Processing:[/bold cyan] [bold green]COMPLETED[/bold green]")
+        console.print(f"    - Candidate evidence chunks: {ev_stats.get('candidates', 0)}")
+        console.print(f"    - Relevant evidence identified: {ev_stats.get('relevant', 0)}")
+        console.print(f"    - Duplicates removed: {ev_stats.get('duplicates_removed', 0)}")
+        console.print(f"    - Final verified evidence set: {ev_stats.get('final', evidence_count)}")
+    else:
+        console.print(f"  • [bold]Evidence Items:[/bold] {evidence_count}")
+
+    if report:
+        console.print(f"  • [bold cyan]Report Synthesis:[/bold cyan] [bold green]COMPLETED[/bold green]")
+        console.print(f"    - Key Findings: {len(report.key_findings)}")
+        console.print(f"    - Sources Cited: {len(report.sources)}")
+        console.print(f"    - Actionable Insights: {len(report.actionable_insights)}")
+
+    if report_path:
+        console.print(f"  • [bold green]Report Written To:[/bold green] [underline]{report_path}[/underline]")
+
     if replans:
         console.print(f"  • [bold magenta]Replanning Events:[/bold magenta] {len(replans)}")
     if final_state.get("error"):
