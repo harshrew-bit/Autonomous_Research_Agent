@@ -4,27 +4,13 @@
 
 ## Overview
 
-The **Autonomous Research Agent** accepts high-level user research queries, extracts structured goal parameters, autonomously formulates dynamic execution plans, and executes reliable research tools with comprehensive error handling and visible tracing.
+The **Autonomous Research Agent** accepts high-level user research queries, extracts structured goal parameters, autonomously formulates dynamic multi-step execution plans, dispatches authorized research tools, observes results, and dynamically adapts, retries, or replans based on feedback.
 
 ---
 
-## Architectural Principles
-
-1. **LLM Provider Abstraction (`app/agent/llm.py`)**: Provider-agnostic interface (`LLMProvider`) supporting Google Gemini (`GeminiProvider`) and deterministic mock backends (`MockLLMProvider`) for offline testing without API keys.
-2. **Goal Analysis (`app/agent/planner.py`)**: High-level goal breakdown extracting objective, domain topic, scope constraints, time boundaries, output requirements, and success criteria.
-3. **Dynamic Decomposition & Planning**: The LLM dynamically constructs tailored task sequences with sub-objectives, tool recommendations, and dependencies based on user intent.
-4. **Deterministic External Tools (Phase 3)**:
-   - **Web Search Tool (`app/tools/web_search.py`)**: Provider-abstracted search (`TavilySearchProvider` & `MockSearchProvider`) returning typed `SearchResponse` containers with error resilience for timeouts, rate limits, and network errors.
-   - **Page Fetcher Tool (`app/tools/page_fetcher.py`)**: Robust HTML content extraction with active SSRF protection, response size limits (2MB), text truncation (50k chars), whitespace normalization, and SHA-256 deduplication hashing.
-5. **Structured Validation & Recovery**: Uses Pydantic schema validation for LLM outputs and tool responses with bounded retry recovery.
-6. **Visible Planning Trace (`app/utils/logging.py`)**: Renders clean, user-facing goal breakdowns, step execution tables, and tool operational logs using `Rich`.
-
----
-
-## Execution Workflow
+## Architecture (Phase 4)
 
 ```
-[Phase 2]
                       +-------------------+
                       |   User Query      |
                       +---------+---------+
@@ -40,26 +26,48 @@ The **Autonomous Research Agent** accepts high-level user research queries, extr
                       +---------+---------+
                                 |
                                 v
-                      +-------------------+
-                      | Visible Trace CLI |
-                      +-------------------+
-
-[Phase 3 Tools Available for Orchestration in Phase 4]
-             +-----------------------+     +-----------------------+
-             |   web_search Tool     |     |   page_fetcher Tool   |
-             | (Tavily/Mock Provider)|     | (SSRF Guarded / HTML) |
-             +-----------------------+     +-----------------------+
+                +------------> execute_step
+                |                   |
+                |                   v
+                |             evaluate_step
+                |                   |
+ (continue / retry)                 +---------------+---------------+
+                +-------------------|               |               |
+                |                   v (replan)      v (complete)    v (fail)
+                |           replan_research        END             END
+                +-------------------+
 ```
-
-*Note: Autonomous tool orchestration (connecting planner to tool execution loops, observations, and replanning) will be connected in Phase 4.*
 
 ---
 
-## Security Considerations (Page Fetcher)
+## Key Modules & Responsibilities
+
+1. **LLM Provider Abstraction (`app/agent/llm.py`)**: Provider-agnostic interface (`LLMProvider`) supporting Google Gemini (`GeminiProvider`) and deterministic mock backends (`MockLLMProvider`) for offline testing without API keys.
+2. **Goal Analysis (`app/agent/planner.py`)**: High-level goal breakdown extracting objective, domain topic, scope constraints, time boundaries, output requirements, and success criteria.
+3. **Dynamic Decomposition & Replanning (`app/agent/planner.py`)**: The LLM dynamically constructs tailored task sequences with sub-objectives, tool recommendations, and dependencies. If a strategy fails, `replan_research` autonomously pivots to alternative sources.
+4. **Tool Registry & Safe Dispatcher (`app/tools/registry.py`)**:
+   - `TOOL_REGISTRY` enforces strict whitelisting and validates tool inputs using Pydantic schemas (`WebSearchInput`, `PageFetcherInput`).
+   - Prevents arbitrary code execution and rejects unauthorized tool names.
+5. **Execution Node (`app/agent/executor.py`)**:
+   - Resolves tool calls dynamically (e.g. derives search queries from task objectives, passes unvisited URLs to page fetcher).
+   - Records structured `Observation` containers and updates state memory.
+6. **Evaluator Node (`app/agent/evaluator.py`)**:
+   - Evaluates step observations and determines next actions: `CONTINUE`, `RETRY`, `REPLAN`, `COMPLETE`, or `FAIL`.
+   - Distinguishes between transient errors (timeouts -> bounded retries) and structural issues (empty search results -> replanning).
+   - Enforces configurable `--max-steps` guards to prevent infinite runaway loops.
+7. **External Tools**:
+   - **Web Search Tool (`app/tools/web_search.py`)**: Tavily and Mock providers with timeout, empty result, and rate-limit resilience.
+   - **Page Fetcher Tool (`app/tools/page_fetcher.py`)**: Robust HTML content extraction with active SSRF protection, response size limits (2MB), text truncation (50k chars), whitespace normalization, and SHA-256 deduplication hashing.
+
+*Note: Final structured report synthesis, content deduplication, and export (Markdown/PDF) will be implemented in Phase 5.*
+
+---
+
+## Security Safeguards
 
 - **SSRF Protection**: `validate_url_ssrf_safe()` blocks requests to private IPv4/IPv6 ranges (RFC 1918), loopback (`127.0.0.1`, `localhost`), link-local (`169.254.0.0/16`), cloud metadata endpoints (`metadata.google.internal`), and non-HTTP schemes.
 - **Resource Limiting**: Response size is capped at 2MB via streaming download to guard against zip bombs and memory exhaustion. Body text is truncated to 50,000 characters.
-- **Content Filtering**: Strips `<script>`, `<style>`, `<nav>`, `<footer>`, `<header>`, and `<noscript>` elements before extracting clean plain text.
+- **Tool Sandbox**: The agent cannot invoke arbitrary Python methods; only explicitly registered tools in `TOOL_REGISTRY` can be called.
 
 ---
 
@@ -93,34 +101,29 @@ TAVILY_API_KEY=your_key    # Required if SEARCH_PROVIDER=tavily
 
 ---
 
-## Manual Tool Testing
+## Running the Agent (CLI)
 
-You can manually invoke and test the tools from the command line:
-
-### 1. Web Search
+### 1. Offline Execution (Mock Mode)
+Run the full planning, tool execution, and evaluation cycle without API keys:
 ```bash
-# Using live Tavily API (requires TAVILY_API_KEY in .env):
-python -m app.tools.web_search "latest developments in Agentic AI"
-
-# Using Mock Provider (no API key needed):
-SEARCH_PROVIDER=mock python -m app.tools.web_search "latest developments in Agentic AI"
+python app/main.py "Research the latest developments in Agentic AI" --provider mock --search-provider mock
 ```
 
-### 2. Page Fetcher
+### 2. Live Execution (Gemini + Tavily)
+Requires `GEMINI_API_KEY` and `TAVILY_API_KEY` set in `.env`:
 ```bash
-# Fetch and extract readable text from a public web page:
-python -m app.tools.page_fetcher "https://example.com"
-
-# Verify SSRF protection on forbidden internal hosts:
-python -m app.tools.page_fetcher "http://127.0.0.1:8080"
+python app/main.py "Research recent advances in vision language models"
 ```
 
----
-
-## Running the Planner (CLI)
-
+### 3. Deliberately Induced Failure Demo
+Simulate a transient network timeout to demonstrate retry recovery:
 ```bash
-python app/main.py "Research the latest developments in Agentic AI" --provider mock
+python app/main.py "Research agentic workflows" --provider mock --search-provider mock --simulate-failure timeout
+```
+
+Simulate an empty search result to demonstrate autonomous replanning:
+```bash
+python app/main.py "Research agentic workflows" --provider mock --search-provider mock --simulate-failure empty
 ```
 
 ---

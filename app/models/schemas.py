@@ -1,5 +1,6 @@
 """
-Pydantic schemas and data types defining state, goal analysis, tasks, plans, tool IO, and output reports.
+Pydantic schemas and data types defining state, goal analysis, tasks, plans, tool IO,
+tool calls, observations, evaluations, and output reports.
 """
 
 from datetime import datetime, timezone
@@ -14,6 +15,14 @@ class TaskStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     RETRYING = "retrying"
+
+
+class DecisionType(str, Enum):
+    CONTINUE = "continue"
+    RETRY = "retry"
+    REPLAN = "replan"
+    COMPLETE = "complete"
+    FAIL = "fail"
 
 
 class GoalAnalysis(BaseModel):
@@ -64,6 +73,31 @@ class Plan(BaseModel):
     current_task_index: int = Field(default=0, description="Index of task currently under execution")
 
 
+class ToolCall(BaseModel):
+    """Structured declaration of a tool invocation request."""
+    tool_name: str = Field(description="Name of registered tool to execute")
+    arguments: Dict[str, Any] = Field(default_factory=dict, description="Validated argument map for the tool")
+    purpose: str = Field(default="", description="Specific reason or goal for this tool call")
+
+
+class Observation(BaseModel):
+    """Structured record of the outcome of a tool execution step."""
+    tool: str = Field(description="Name of tool that was executed")
+    success: bool = Field(description="Whether the tool execution completed successfully")
+    summary: str = Field(description="Concise summary of the result or failure")
+    data_count: int = Field(default=0, description="Count of discrete items retrieved (e.g. results or chars)")
+    error: Optional[str] = Field(default=None, description="Error message if execution failed")
+    details: Dict[str, Any] = Field(default_factory=dict, description="Additional structured execution metadata")
+
+
+class EvaluationDecision(BaseModel):
+    """Assessment decision reached after evaluating the latest execution step."""
+    decision: DecisionType = Field(description="Action to take next (continue, retry, replan, complete, fail)")
+    reason: str = Field(description="Concise operational reason for the decision")
+    confidence: float = Field(default=1.0, description="Confidence score [0.0 - 1.0]")
+    next_action: str = Field(default="", description="Description of the subsequent planned action")
+
+
 class SearchResultItem(BaseModel):
     """A single result item returned from a web search provider."""
     title: str = Field(description="Page or article title")
@@ -102,6 +136,7 @@ class FetchedPage(BaseModel):
 
 
 class ResearchEvidence(BaseModel):
+    """Structured evidence excerpt extracted from an external source."""
     source_url: str = Field(description="URL source of the evidence chunk")
     title: str = Field(description="Source document title")
     content_chunk: str = Field(description="Extracted relevant text excerpt")
@@ -109,6 +144,7 @@ class ResearchEvidence(BaseModel):
 
 
 class ResearchReport(BaseModel):
+    """Final structured report synthesized at the conclusion of research."""
     topic: str = Field(description="Main research topic")
     key_points: List[str] = Field(default_factory=list, description="High-level bullet points")
     important_findings: List[str] = Field(default_factory=list, description="Detailed discoveries and findings")

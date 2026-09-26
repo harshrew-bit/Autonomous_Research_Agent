@@ -1,11 +1,11 @@
 """
-Planner module responsible for goal analysis, dynamic plan decomposition, and replanning.
+Planner module responsible for goal analysis, dynamic plan decomposition, and autonomous replanning.
 """
 
 from typing import Dict, Any, Optional
 from app.agent.state import ResearchAgentState
 from app.agent.llm import get_llm_provider, LLMProvider
-from app.models.schemas import GoalAnalysis, Plan
+from app.models.schemas import GoalAnalysis, Plan, Task
 from app.utils.logging import TraceLogger, get_logger
 
 logger = get_logger("planner")
@@ -82,8 +82,7 @@ async def generate_plan(
         "IMPORTANT RULES:\n"
         "1. Do NOT produce a fixed or generic sequence. Construct a plan specifically tailored to the query, topic, "
         "time limits, and output criteria.\n"
-        "2. Suggest appropriate tools for each step (e.g., 'web_search', 'page_fetcher', 'evaluator', 'report_writer', "
-        "'synthesizer', 'calculator').\n"
+        "2. Suggest appropriate tools for each step (e.g., 'web_search', 'page_fetcher').\n"
         "3. Specify clear sub-objectives, dependencies, and expected outputs for each step.\n"
         "4. Provide a clear rationale for the chosen plan architecture."
     )
@@ -104,18 +103,72 @@ async def generate_plan(
     # Print visible planning trace in CLI
     TraceLogger.print_plan(query=plan.query or query, rationale=plan.rationale, tasks=plan.tasks)
 
-    return {"plan": plan}
+    return {
+        "plan": plan,
+        "current_task_index": 0,
+        "current_task": plan.tasks[0] if plan.tasks else None,
+        "status": "executing",
+    }
 
 
-async def plan_research(state: ResearchAgentState) -> Dict[str, Any]:
-    """Legacy alias wrapping generate_plan for backward compatibility."""
-    return await generate_plan(state)
-
-
-async def replan_research(state: ResearchAgentState) -> Dict[str, Any]:
+async def replan_research(
+    state: ResearchAgentState,
+    llm_provider: Optional[LLMProvider] = None
+) -> Dict[str, Any]:
     """
-    Revises active plan based on execution failures or evidence gaps.
+    Autonomously creates an adjusted research plan after a tool failure or insufficient findings.
     """
-    logger.info("Replanning requested.")
-    # Stub for execution phases
-    return {}
+    query = state.get("query", "")
+    last_obs = state.get("last_observation")
+    last_dec = state.get("last_decision")
+    prev_plan = state.get("plan")
+
+    reason = last_dec.reason if last_dec else (last_obs.summary if last_obs else "Insufficient progress.")
+    TraceLogger.print_replan_notice(reason)
+
+    provider = llm_provider or get_llm_provider()
+
+    system_instruction = (
+        "You are an Autonomous AI Replanner. The prior research plan encountered a failure or produced insufficient evidence.\n"
+        "Analyze the failure reason and formulate an updated, alternative research plan to overcome the barrier.\n"
+        "Allowed tools: 'web_search', 'page_fetcher'."
+    )
+
+    prev_tasks_str = ", ".join(f"[{t.id}: {t.description}]" for t in prev_plan.tasks) if prev_plan else "None"
+    prompt = (
+        f"Original Query: \"{query}\"\n"
+        f"Reason for Replanning: {reason}\n"
+        f"Prior Tasks: {prev_tasks_str}\n\n"
+        "Formulate a revised, adaptive research plan with alternative search keywords or sources."
+    )
+
+    logger.info("Generating revised plan via LLM...")
+    revised_plan: Plan = await provider.generate_structured(
+        prompt=prompt,
+        response_schema=Plan,
+        system_instruction=system_instruction,
+    )
+
+    TraceLogger.print_plan(
+        query=revised_plan.query or query,
+        rationale=f"REVISED PLAN: {revised_plan.rationale}",
+        tasks=revised_plan.tasks,
+    )
+
+    replan_event = {
+        "event": "replan",
+        "reason": reason,
+        "new_task_count": len(revised_plan.tasks),
+    }
+
+    return {
+        "plan": revised_plan,
+        "current_task_index": 0,
+        "current_task": revised_plan.tasks[0] if revised_plan.tasks else None,
+        "status": "executing",
+        "execution_history": [replan_event],
+    }
+
+
+# Backwards compatibility alias
+plan_research = generate_plan

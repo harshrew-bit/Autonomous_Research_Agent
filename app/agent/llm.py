@@ -152,32 +152,63 @@ class MockLLMProvider(LLMProvider):
                 success_criteria=["Complete report"],
             ) # type: ignore
         elif schema == Plan:
-            tasks = [
-                Task(
-                    id="task_1",
-                    description=f"Search information for {prompt}",
-                    objective="Gather raw sources",
-                    expected_output="Search result links",
-                    suggested_tool="web_search",
-                ),
-                Task(
-                    id="task_2",
-                    description="Extract page content from top sources",
-                    objective="Fetch detailed content",
-                    expected_output="Extracted text chunks",
-                    suggested_tool="page_fetcher",
-                ),
-                Task(
-                    id="task_3",
-                    description="Evaluate relevance and synthesize findings",
-                    objective="Produce final report",
-                    expected_output="Structured summary report",
-                    suggested_tool="report_writer",
-                ),
-            ]
+            is_replan = "replan" in prompt.lower() or "revised" in prompt.lower()
+            topic = "Agentic AI"
+            if 'User Query:\n"' in prompt:
+                try:
+                    topic = prompt.split('User Query:\n"')[1].split('"')[0].strip()
+                except Exception:
+                    pass
+            elif 'Original Query: "' in prompt:
+                try:
+                    topic = prompt.split('Original Query: "')[1].split('"')[0].strip()
+                except Exception:
+                    pass
+            elif len(prompt) < 100:
+                topic = prompt.strip()
+
+            if is_replan:
+                tasks = [
+                    Task(
+                        id="task_replan_1",
+                        description=f"Search alternative broader sources for {topic}",
+                        objective="Gather broadened search results",
+                        expected_output="Expanded search URLs",
+                        suggested_tool="web_search",
+                        tool_input={"query": f"{topic} alternative perspectives"},
+                    ),
+                    Task(
+                        id="task_replan_2",
+                        description=f"Extract page content from expanded sources on {topic}",
+                        objective="Fetch new evidence chunks",
+                        expected_output="Detailed text excerpts",
+                        suggested_tool="page_fetcher",
+                    ),
+                ]
+                rationale = f"Adaptive recovery plan broadening search keywords for '{topic}' after initial strategy failure."
+            else:
+                tasks = [
+                    Task(
+                        id="task_1",
+                        description=f"Search authoritative sources regarding {topic}",
+                        objective="Gather candidate research links",
+                        expected_output="Candidate search results",
+                        suggested_tool="web_search",
+                        tool_input={"query": f"{topic} latest developments"},
+                    ),
+                    Task(
+                        id="task_2",
+                        description=f"Extract detailed content from top discovered source for {topic}",
+                        objective="Extract structured evidence from web page",
+                        expected_output="Cleaned text content",
+                        suggested_tool="page_fetcher",
+                    ),
+                ]
+                rationale = f"Dynamic execution plan combining external search and deep content extraction for '{topic}'."
+
             return Plan(
                 query=prompt,
-                rationale="Mock execution plan with search, fetch, and report steps",
+                rationale=rationale,
                 tasks=tasks,
             ) # type: ignore
 

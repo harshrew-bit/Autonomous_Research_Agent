@@ -1,9 +1,10 @@
 """
-CLI entry point for the Autonomous Research Agent (Phase 2).
+CLI entry point for the Autonomous Research Agent (Phase 4).
 """
 
 import argparse
 import asyncio
+import os
 from pathlib import Path
 import sys
 from dotenv import load_dotenv
@@ -22,7 +23,7 @@ logger = get_logger("main")
 def parse_args() -> argparse.Namespace:
     """Parse CLI arguments for research topic and runtime flags."""
     parser = argparse.ArgumentParser(
-        description="Autonomous Research Agent - Dynamic planning and iterative web research"
+        description="Autonomous Research Agent - Dynamic planning and autonomous tool execution"
     )
     parser.add_argument(
         "query",
@@ -48,14 +49,37 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="LLM provider to use (e.g. 'gemini', 'mock'). Overrides LLM_PROVIDER env variable.",
     )
+    parser.add_argument(
+        "--search-provider",
+        type=str,
+        default=None,
+        help="Search provider to use (e.g. 'tavily', 'mock'). Overrides SEARCH_PROVIDER env variable.",
+    )
+    parser.add_argument(
+        "--simulate-failure",
+        type=str,
+        choices=["timeout", "empty", "none"],
+        default=None,
+        help="Deliberately induce a tool failure mode for resilience demonstration.",
+    )
     return parser.parse_args()
 
 
-async def run_agent(query: str, max_steps: int, output_dir: str, provider: str = None) -> None:
-    """Initializes state graph and runs research cycle."""
+async def run_agent(
+    query: str,
+    max_steps: int,
+    output_dir: str,
+    provider: str = None,
+    search_provider: str = None,
+    simulate_failure: str = None,
+) -> dict:
+    """Initializes state graph and runs autonomous research execution loop."""
     if provider:
-        import os
         os.environ["LLM_PROVIDER"] = provider
+    if search_provider:
+        os.environ["SEARCH_PROVIDER"] = search_provider
+    if simulate_failure and simulate_failure != "none":
+        os.environ["SIMULATE_FAILURE"] = simulate_failure
 
     console.rule("[bold cyan]AUTONOMOUS RESEARCH AGENT[/bold cyan]")
     console.print(f"[bold white]User Research Query:[/bold white] {query}\n")
@@ -66,21 +90,51 @@ async def run_agent(query: str, max_steps: int, output_dir: str, provider: str =
         "query": query,
         "goal_analysis": None,
         "plan": None,
+        "current_task_index": 0,
         "current_task": None,
         "completed_tasks": [],
+        "search_results": [],
+        "fetched_pages": [],
         "evidence": [],
         "visited_urls": [],
+        "tool_results": [],
+        "last_observation": None,
+        "last_decision": None,
         "step_count": 0,
         "max_steps": max_steps,
         "retry_count": 0,
+        "max_retries_per_task": 2,
+        "execution_history": [],
         "is_complete": False,
+        "status": "planning",
         "error": None,
         "final_report": None,
     }
 
-    logger.info("Executing LangGraph planning pipeline...")
+    logger.info("Executing LangGraph autonomous research loop...")
     final_state = await graph.ainvoke(initial_state)
-    logger.info("LangGraph planning pipeline completed successfully.")
+    logger.info("LangGraph execution loop concluded.")
+
+    # Final execution status summary banner
+    status = final_state.get("status", "unknown")
+    steps = final_state.get("step_count", 0)
+    search_count = len(final_state.get("search_results", []))
+    evidence_count = len(final_state.get("evidence", []))
+    replans = [e for e in final_state.get("execution_history", []) if e.get("event") == "replan"]
+
+    console.rule(style="bold green")
+    console.print(f"[bold green]EXECUTION SUMMARY[/bold green]")
+    console.print(f"  • [bold]Status:[/bold] {status.upper()}")
+    console.print(f"  • [bold]Steps Executed:[/bold] {steps}/{max_steps}")
+    console.print(f"  • [bold]Search Results Acquired:[/bold] {search_count}")
+    console.print(f"  • [bold]Evidence Chunks Extracted:[/bold] {evidence_count}")
+    if replans:
+        console.print(f"  • [bold magenta]Replanning Events:[/bold magenta] {len(replans)}")
+    if final_state.get("error"):
+        console.print(f"  • [bold red]Final Error:[/bold red] {final_state.get('error')}")
+    console.rule(style="bold green")
+
+    return final_state
 
 
 def main() -> None:
@@ -94,7 +148,16 @@ def main() -> None:
         sys.exit(1)
 
     try:
-        asyncio.run(run_agent(args.query, args.max_steps, args.output_dir, args.provider))
+        asyncio.run(
+            run_agent(
+                query=args.query,
+                max_steps=args.max_steps,
+                output_dir=args.output_dir,
+                provider=args.provider,
+                search_provider=args.search_provider,
+                simulate_failure=args.simulate_failure,
+            )
+        )
     except Exception as e:
         logger.error(f"Execution failed: {e}")
         console.print(f"[bold red]Execution Error:[/bold red] {e}")

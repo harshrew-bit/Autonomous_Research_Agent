@@ -82,37 +82,60 @@ class TraceLogger:
         console.print("[dim green]✔ Plan generated successfully and ready for orchestration.[/dim green]\n")
 
     @staticmethod
+    def print_step_header(step_number: int, task_desc: str, tool_name: str, is_retry: bool = False) -> None:
+        """Display step initiation banner with task description and tool name."""
+        console.rule(style="dim cyan")
+        retry_tag = " [bold magenta](RETRY)[/bold magenta]" if is_retry else ""
+        console.print(f"[bold cyan][STEP {step_number}]{retry_tag}[/bold cyan]")
+        console.print(f"  [bold white]Task:[/bold white] {task_desc}")
+        console.print(f"  [bold yellow]Tool:[/bold yellow] {tool_name}")
+        console.print("  [dim]→ Executing...[/dim]")
+
+    @staticmethod
+    def print_step_outcome(success: bool, summary: str) -> None:
+        """Display concise step completion or failure."""
+        if success:
+            console.print(f"  [bold green]✓ Completed:[/bold green] {summary}")
+        else:
+            console.print(f"  [bold red]✗ Failed:[/bold red] {summary}")
+
+    @staticmethod
+    def print_observation_box(summary: str) -> None:
+        """Display concise observation from tool output."""
+        console.print(f"  [bold blue][OBSERVATION][/bold blue] {summary}")
+
+    @staticmethod
+    def print_decision(decision: str, reason: str) -> None:
+        """Display evaluator action decision."""
+        colors = {
+            "continue": "bold green",
+            "retry": "bold yellow",
+            "replan": "bold magenta",
+            "complete": "bold cyan",
+            "fail": "bold red",
+        }
+        color = colors.get(decision.lower(), "bold white")
+        console.print(f"  [bold][DECISION][/bold] [{color}]{decision.upper()}[/{color}] - [italic]{reason}[/italic]\n")
+
+    @staticmethod
+    def print_replan_notice(reason: str) -> None:
+        """Display notice when replanning is activated."""
+        console.print(Panel(f"[bold magenta]Replanning Active Strategy:[/bold magenta] {reason}", title="[bold yellow]REPLAN TRIGGERED[/bold yellow]", expand=False))
+
+    @staticmethod
     def print_tool_start(tool_name: str, target: str) -> None:
         """Display concise tool execution initiation."""
-        console.print(f"\n[bold cyan][TOOL][/bold cyan] [bold]{tool_name}[/bold]")
-        console.print(f"  [dim]Target/Input:[/dim] {target}")
+        logger = get_logger("tool")
+        logger.debug(f"Starting {tool_name} with target: {target}")
 
     @staticmethod
     def print_tool_success(tool_name: str, summary: str) -> None:
         """Display tool completion summary."""
-        console.print(f"  [bold green]✓ {tool_name} completed:[/bold green] {summary}")
+        logger = get_logger("tool")
+        logger.debug(f"{tool_name} succeeded: {summary}")
 
     @staticmethod
     def print_tool_error(tool_name: str, target: str, error: str, recovery_hint: Optional[str] = None) -> None:
-        """Display tool execution failure with optional recovery hint."""
-        console.print(f"\n[bold red][TOOL ERROR][/bold red] [bold]{tool_name}[/bold]")
-        console.print(f"  [dim]Target:[/dim] {target}")
-        console.print(f"  [red]✗ Failure:[/red] {error}")
-        if recovery_hint:
-            console.print(f"  [magenta]↳ Recovery hint:[/magenta] {recovery_hint}")
-
-    @staticmethod
-    def print_step(step_number: int, task_desc: str, tool_name: str) -> None:
-        """Display step start trace."""
-        console.print(f"[bold green]▶ Step {step_number}:[/bold green] Invoking tool [cyan]{tool_name}[/cyan] for '{task_desc}'")
-
-    @staticmethod
-    def print_observation(status: str, detail: str) -> None:
-        """Display step outcome observation."""
-        color = "green" if status.lower() in ("completed", "success") else "red"
-        console.print(f"  [{color}]↳ Observation ({status}):[/{color}] {detail}")
-
-    @staticmethod
-    def print_recovery(reason: str) -> None:
-        """Display failure recovery or replanning trace."""
-        console.print(f"  [bold magenta]⚠ Recovery triggered:[/bold magenta] {reason}")
+        """Display tool execution failure."""
+        logger = get_logger("tool")
+        logger.debug(f"{tool_name} failed on {target}: {error}")

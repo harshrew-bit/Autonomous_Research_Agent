@@ -118,10 +118,39 @@ class TavilySearchProvider(SearchProvider):
 class MockSearchProvider(SearchProvider):
     """Deterministic mock search provider for testing without external network calls."""
 
-    def __init__(self, predefined_results: Optional[List[SearchResultItem]] = None):
+    _simulated_timeouts_count = 0
+
+    def __init__(
+        self,
+        predefined_results: Optional[List[SearchResultItem]] = None,
+        simulate_failure: Optional[str] = None,
+    ):
         self.predefined_results = predefined_results
+        self.simulate_failure = simulate_failure
 
     async def search(self, query: str, max_results: int = 5) -> SearchResponse:
+        sim_mode = (self.simulate_failure or os.getenv("SIMULATE_FAILURE", "")).lower()
+
+        # Simulate transient timeout on first occurrence, then succeed on retry!
+        if sim_mode == "timeout" and MockSearchProvider._simulated_timeouts_count == 0:
+            MockSearchProvider._simulated_timeouts_count += 1
+            logger.info("[MockSearchProvider] Simulating induced transient timeout failure.")
+            return SearchResponse(
+                query=query,
+                results=[],
+                provider="mock",
+                success=False,
+                error="Request timed out after 15.0s (Simulated Failure for Assessment Demo).",
+            )
+        elif sim_mode == "empty":
+            logger.info("[MockSearchProvider] Simulating induced empty search results.")
+            return SearchResponse(
+                query=query,
+                results=[],
+                provider="mock",
+                success=True,
+            )
+
         if not query or not query.strip():
             return SearchResponse(
                 query=query,
@@ -143,7 +172,7 @@ class MockSearchProvider(SearchProvider):
         items = [
             SearchResultItem(
                 title=f"Analysis of {query} - Overview",
-                url=f"https://example.com/research/{i+1}",
+                url="https://example.com",
                 snippet=f"Detailed overview and key findings regarding {query}, highlighting practical implications.",
                 source="example.com",
                 published_at="2026-09-01",
