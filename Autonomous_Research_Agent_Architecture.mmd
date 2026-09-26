@@ -1,107 +1,82 @@
-%% Autonomous Research Agent - Architecture Diagram
-%% Generated for Agentic AI Engineer Intern Evaluation
+%% Autonomous Research Agent - System Architecture
+%% Landscape Flowchart: Ingestion -> Execution -> Safe Tools -> Evaluation & Recovery -> Evidence & Synthesis
 
-flowchart TB
-    %% Styling & Theme Classes
-    classDef inputStyle fill:#1e293b,stroke:#475569,stroke-width:2px,color:#f8fafc;
-    classDef llmStyle fill:#0f172a,stroke:#3b82f6,stroke-width:2px,color:#93c5fd;
-    classDef loopStyle fill:#1e1b4b,stroke:#6366f1,stroke-width:2px,color:#c7d2fe;
-    classDef toolStyle fill:#064e3b,stroke:#10b981,stroke-width:2px,color:#a7f3d0;
-    classDef evalStyle fill:#450a0a,stroke:#ef4444,stroke-width:2px,color:#fca5a5;
-    classDef pipeStyle fill:#022c22,stroke:#14b8a6,stroke-width:2px,color:#99f6e4;
-    classDef stateStyle fill:#312e81,stroke:#8b5cf6,stroke-width:2px,color:#ddd6fe;
-    classDef panelStyle fill:#18181b,stroke:#71717a,stroke-width:1.5px,color:#e4e4e7;
-    classDef outputStyle fill:#14532d,stroke:#22c55e,stroke-width:2px,color:#86efac;
+flowchart LR
+    %% Theme Classes
+    classDef inputStyle fill:#1e293b,stroke:#3b82f6,stroke-width:2px,color:#f8fafc;
+    classDef llmStyle fill:#1e1b4b,stroke:#8b5cf6,stroke-width:2px,color:#e0e7ff;
+    classDef loopStyle fill:#0f172a,stroke:#38bdf8,stroke-width:2px,color:#e0f2fe;
+    classDef toolStyle fill:#064e3b,stroke:#10b981,stroke-width:2px,color:#d1fae5;
+    classDef evalStyle fill:#4c0519,stroke:#f43f5e,stroke-width:2px,color:#ffe4e6;
+    classDef replanStyle fill:#78350f,stroke:#f59e0b,stroke-width:2px,color:#fef3c7;
+    classDef pipeStyle fill:#042f2e,stroke:#14b8a6,stroke-width:2px,color:#ccfbf1;
+    classDef stateStyle fill:#312e81,stroke:#a855f7,stroke-width:2px,color:#f3e8ff;
+    classDef outStyle fill:#14532d,stroke:#22c55e,stroke-width:2px,color:#dcfce7;
+    classDef haltStyle fill:#7f1d1d,stroke:#ef4444,stroke-width:2px,color:#fee2e2;
 
-    %% Column 1: Control & Planning
-    subgraph S_USER ["1. USER & CLI ENTRY POINT"]
-        CLI["app/main.py\nUser Research Query\nCLI Flags: --provider, --search-provider,\n--simulate-failure, --max-steps"]:::inputStyle
+    %% 1. Ingestion & Planning
+    subgraph S_PLAN ["1. Ingestion & Planning"]
+        CLI["USER / CLI Entry\napp/main.py\nResearch Query & Flags"]:::inputStyle
+        AG["Node: analyze_goal\nGemini 3.5 Flash-Lite\nGoalAnalysis Schema"]:::llmStyle
+        GP["Node: generate_plan\nGemini 3.5 Flash-Lite\nLLMPlan Schema"]:::llmStyle
+        ADP["Plan Adapter\nClosed Schema -> Plan/Task\n0 additionalProperties"]:::llmStyle
     end
 
-    subgraph S_PLAN ["2. GOAL ANALYSIS & DYNAMIC PLANNING"]
-        AG["Node: analyze_goal\n(app/agent/planner.py)\nGemini 3.5 Flash-Lite\nGoalAnalysis Schema"]:::llmStyle
-        GP["Node: generate_plan\n(app/agent/planner.py)\nGemini 3.5 Flash-Lite"]:::llmStyle
-        LP["Closed Planning Contract\nLLMPlan & PlannedTask\n(0 additionalProperties)"]:::llmStyle
-        CVT["Runtime Conversion\n.to_runtime_plan()\nPlan & Task Models"]:::llmStyle
+    %% 2. Execution & Safe Tools
+    subgraph S_EXEC ["2. Execution & Safe Tools Layer"]
+        EX["Node: execute_step\napp/agent/executor.py\nResolve Tool Call"]:::loopStyle
+        TR["Tool Registry\napp/tools/registry.py\nWhitelist & Pydantic Guard"]:::toolStyle
+        WS["web_search Tool\nTavily API (Live)\nMock Provider (Fault Sim)"]:::toolStyle
+        PF["page_fetcher Tool\nSSRF Firewall Guard\nBeautifulSoup (2MB Cap)"]:::toolStyle
+        OBS["Observation Container\nStructured Tool Observation"]:::loopStyle
     end
 
-    %% Column 2: Orchestration & State
-    subgraph S_LOOP ["3. LANGGRAPH ORCHESTRATION & EXECUTION LOOP"]
-        EX["Node: execute_step\n(app/agent/executor.py)\nDynamic Argument Resolution"]:::loopStyle
-        OBS["Structured Observation\n(Observation Schema)"]:::loopStyle
-        EV["Node: evaluate_step\n(app/agent/evaluator.py)\nOutcome Assessment & Decision Matrix"]:::evalStyle
-        RP["Node: replan_research\n(app/agent/planner.py)\nAdaptive Keyword & Source Revision"]:::llmStyle
+    %% Central State Bus
+    STATE[("Central State Bus: ResearchAgentState\nsearch_results | fetched_pages | visited_urls\nevidence_items | step_count | retry_count | history")]:::stateStyle
+
+    %% 3. Evaluation & Control Loop
+    subgraph S_EVAL ["3. Evaluation & Recovery"]
+        EV{"Node: evaluate_step\napp/agent/evaluator.py\nDecision Engine"}:::evalStyle
+        RP["Node: replan_research\nGemini 3.5 Flash-Lite\nRevised LLM Plan"]:::replanStyle
+        HALT["Terminate Safely\n(Step Limit >= 10)"]:::haltStyle
     end
 
-    subgraph S_TOOLS ["4. SAFE TOOL EXECUTION LAYER"]
-        TR["ToolRegistry (app/tools/registry.py)\nPydantic Whitelist Validation"]:::toolStyle
-        WS["web_search (app/tools/web_search.py)\n- TavilySearchProvider (Live HTTP POST)\n- MockSearchProvider (Deterministic / Fault Sim)"]:::toolStyle
-        PF["page_fetcher (app/tools/page_fetcher.py)\n- SSRF Protection Guard\n- BeautifulSoup DOM Parser\n- 2MB / 50k Chars Cap"]:::toolStyle
+    %% 4. Evidence Pipeline & Output
+    subgraph S_SYNTH ["4. Evidence & Synthesis"]
+        EP["Node: process_evidence\nRelevance (density >= 0.30)\nSHA-256 + Jaccard >= 0.75"]:::pipeStyle
+        SR["Node: synthesize_report\nGemini 3.5 Flash-Lite\nGrounded Citations"]:::llmStyle
+        OUT["Final Research Report\nreports/<query_slug>.md"]:::outStyle
     end
 
-    %% Central State
-    STATE[("Central ResearchAgentState (app/agent/state.py)\nTypedDict + Annotated Reducers (operator.add)\nquery, plan, tasks, search_results, fetched_pages,\nevidence_items, observations, step_count, status")]:::stateStyle
-
-    %% Column 3: Evidence & Output
-    subgraph S_EVIDENCE ["5. EVIDENCE PROCESSING PIPELINE"]
-        EP["Node: process_evidence\n(app/agent/evidence.py)"]:::pipeStyle
-        CE["Candidate Extraction\nParagraph Splitting, Boilerplate Filter,\nEmpirical Classification"]:::pipeStyle
-        RF["Relevance Filtering\nKeyword Density Score >= 0.30"]:::pipeStyle
-        DD["Multi-Signal Deduplication\n(app/utils/deduplication.py)\nSHA-256 Hash + Jaccard Sim >= 0.75"]:::pipeStyle
-    end
-
-    subgraph S_SYNTH ["6. REPORT SYNTHESIS & EXPORT"]
-        SR["Node: synthesize_report\n(app/agent/synthesizer.py)\nGemini 3.5 Flash-Lite\nResearchReport Schema\nStrict Source Attribution"]:::llmStyle
-        ER["Node: export_report\n(app/tools/report_writer.py)\nSafe Query Slug Generation\nMarkdown Renderer"]:::outputStyle
-        OUT["Final Report Artifact\nreports/<query_slug>.md"]:::outputStyle
-    end
-
-    %% Side Panels: Controls & Testing
-    subgraph S_SECURITY ["SECURITY & ROBUSTNESS CONTROLS"]
-        SEC1["- Tool Whitelist & Pydantic Validation\n- SSRF Protection (DNS & Private IP Filter)\n- 2 MB Payload & 50k Char Caps\n- 10-Step Execution Loop Guard\n- 2 Max Retries Per Task\n- Closed Gemini Schemas (0 addProps)\n- API Keys Isolated (.env ignored in git)"]:::panelStyle
-    end
-
-    subgraph S_TESTING ["OFFLINE TEST & VALIDATION SUITE"]
-        TST1["- 66/66 Passing Automated Tests\n- MockLLMProvider (Deterministic Schemas)\n- MockSearchProvider (Fault Injection)\n- Deliberate Timeout -> Retry -> Recovery\n- Non-transient 404 -> Replan Validation"]:::panelStyle
-    end
-
-    %% Main Data & Control Flow
-    CLI -->|"initial_state"| AG
+    %% Ingestion Flow
+    CLI -->|"query string"| AG
     AG -->|"GoalAnalysis"| GP
-    GP -->|"LLMPlan"| LP
-    LP --> CVT
-    CVT -->|"Plan (runtime)"| EX
+    GP -->|"LLMPlan"| ADP
+    ADP -->|"Plan / Task"| EX
 
-    %% Loop Execution & Tools
-    EX -->|"tool_name, arguments"| TR
-    TR -->|"WebSearchInput"| WS
-    TR -->|"PageFetcherInput"| PF
+    %% Execution & Tools Flow
+    EX -->|"dispatch"| TR
+    TR -->|"validate"| WS
+    TR -->|"validate"| PF
     WS -->|"SearchResponse"| OBS
     PF -->|"FetchedPage"| OBS
     OBS -->|"last_observation"| EV
 
     %% State Synchronization
-    AG -.-> STATE
-    CVT -.-> STATE
-    EX -.-> STATE
+    EX <-.-> STATE
     OBS -.-> STATE
-    EV -.-> STATE
-    EP -.-> STATE
-    SR -.-> STATE
+    EV <-.-> STATE
+    RP -.-> STATE
+    EP <-.-> STATE
 
-    %% Evaluator Decisions
-    EV -->|"Decision: CONTINUE\n(Task Succeeded -> Next Task)"| EX
-    EV ==>|"Decision: RETRY\n(Transient Timeout/429, retry < 2)"| EX
-    EV ==>|"Decision: REPLAN\n(Failure/Retries Exhausted)"| RP
-    RP -->|"revised_plan"| EX
-    EV -->|"Decision: COMPLETE\n(Tasks Done & Evidence Gathered)"| EP
-    EV -->|"Decision: FAIL\n(step_count >= 10 with data)"| EP
-    EV -->|"Decision: FAIL (no data)"| END_NODE(["END"]):::inputStyle
+    %% Evaluator Decision Branches
+    EV -->|"CONTINUE: task succeeded"| EX
+    EV ==>|"RETRY: timeout/429 (retry < 2)"| EX
+    EV ==>|"REPLAN: 404/empty/exhausted"| RP
+    RP -->|"revised plan -> execute"| EX
+    EV -->|"FAIL: step limit >= 10"| HALT
+    EV -->|"COMPLETE: all tasks done"| EP
 
-    %% Evidence & Synthesis
-    EP --> CE --> RF --> DD
-    DD -->|"evidence_items"| SR
-    DD -.->|"0 evidence & budget remains"| RP
-    SR -->|"ResearchReport"| ER
-    ER -->|"Write to disk"| OUT
-    OUT --> END_NODE
+    %% Synthesis Flow
+    EP -->|"verified evidence"| SR
+    SR -->|"ResearchReport"| OUT
