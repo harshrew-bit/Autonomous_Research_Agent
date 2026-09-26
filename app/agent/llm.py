@@ -199,7 +199,7 @@ class MockLLMProvider(LLMProvider):
         return self._generate_default_mock(response_schema, prompt)
 
     def _generate_default_mock(self, schema: Type[T], prompt: str) -> T:
-        from app.models.schemas import GoalAnalysis, Plan, Task, TaskStatus
+        from app.models.schemas import GoalAnalysis, Plan, Task, TaskStatus, LLMPlan, PlannedTask, ToolInput
 
         if schema == GoalAnalysis:
             return GoalAnalysis(
@@ -210,7 +210,7 @@ class MockLLMProvider(LLMProvider):
                 output_requirements=["Structured analysis"],
                 success_criteria=["Complete report"],
             ) # type: ignore
-        elif schema == Plan:
+        elif schema in (Plan, LLMPlan) or schema.__name__ in ("Plan", "LLMPlan"):
             is_replan = "replan" in prompt.lower() or "revised" in prompt.lower()
             topic = "Agentic AI"
             if 'User Query:\n"' in prompt:
@@ -225,6 +225,54 @@ class MockLLMProvider(LLMProvider):
                     pass
             elif len(prompt) < 100:
                 topic = prompt.strip()
+
+            if schema == LLMPlan or schema.__name__ == "LLMPlan":
+                if is_replan:
+                    llm_tasks = [
+                        PlannedTask(
+                            id="task_replan_1",
+                            description=f"Search alternative broader sources for {topic}",
+                            objective="Gather broadened search results",
+                            expected_output="Expanded search URLs",
+                            suggested_tool="web_search",
+                            tool_input=ToolInput(query=f"{topic} alternative perspectives"),
+                        ),
+                        PlannedTask(
+                            id="task_replan_2",
+                            description=f"Extract page content from expanded sources on {topic}",
+                            objective="Fetch new evidence chunks",
+                            expected_output="Detailed text excerpts",
+                            suggested_tool="page_fetcher",
+                            tool_input=ToolInput(),
+                        ),
+                    ]
+                    rationale = f"Adaptive recovery plan broadening search keywords for '{topic}' after initial strategy failure."
+                else:
+                    llm_tasks = [
+                        PlannedTask(
+                            id="task_1",
+                            description=f"Search authoritative sources regarding {topic}",
+                            objective="Gather candidate research links",
+                            expected_output="Candidate search results",
+                            suggested_tool="web_search",
+                            tool_input=ToolInput(query=f"{topic} latest developments"),
+                        ),
+                        PlannedTask(
+                            id="task_2",
+                            description=f"Extract detailed content from top discovered source for {topic}",
+                            objective="Extract structured evidence from web page",
+                            expected_output="Cleaned text content",
+                            suggested_tool="page_fetcher",
+                            tool_input=ToolInput(),
+                        ),
+                    ]
+                    rationale = f"Dynamic execution plan combining external search and deep content extraction for '{topic}'."
+
+                return LLMPlan(
+                    query=prompt,
+                    rationale=rationale,
+                    tasks=llm_tasks,
+                ) # type: ignore
 
             if is_replan:
                 tasks = [

@@ -218,6 +218,90 @@ def test_deduplicate_preserves_distinct_claims_from_same_url():
     assert len(deduped) == 2
 
 
+def test_deduplicate_live_like_syndicated_and_repeated_evidence():
+    """
+    Regression test: verify multi-signal deduplication eliminates exact mirrors
+    and near-duplicate syndicated snippets while preserving distinct claims.
+    """
+    original_text = (
+        "Modern agentic AI systems integrate external tools and APIs dynamically through "
+        "function calling protocols and structured execution environments."
+    )
+    # Syndicated mirror with minor trailing attribution
+    mirror_text = (
+        "Modern agentic AI systems integrate external tools and APIs dynamically through "
+        "function calling protocols and structured execution environments. Published by TechNews."
+    )
+    # Completely different claim from the same domain
+    same_domain_different_claim = (
+        "Long-term memory architectures utilize vector databases and knowledge graphs to "
+        "maintain cross-session state and episodic recall."
+    )
+    # Different claim from another domain
+    other_domain_claim = (
+        "Self-correction loops evaluate intermediate tool outputs and trigger autonomous replanning "
+        "upon encountering execution barriers."
+    )
+
+    ev_original = EvidenceItem(
+        source_url="https://technews.io/articles/agentic-tools",
+        source_title="Agentic Tools in 2026",
+        claim="Modern agentic AI systems integrate external tools dynamically",
+        supporting_text=original_text,
+        relevance_score=0.90,
+        content_hash=compute_content_hash(f"Modern agentic AI systems integrate external tools dynamically {original_text}"),
+    )
+    # Exact duplicate (same content hash)
+    ev_exact_dup = EvidenceItem(
+        source_url="https://aggregator.net/copy",
+        source_title="Mirror Copy",
+        claim="Modern agentic AI systems integrate external tools dynamically",
+        supporting_text=original_text,
+        relevance_score=0.75,
+        content_hash=compute_content_hash(f"Modern agentic AI systems integrate external tools dynamically {original_text}"),
+    )
+    # Near-duplicate syndicated rephrase
+    ev_near_dup = EvidenceItem(
+        source_url="https://syndicate.org/feed",
+        source_title="Syndicated Feed",
+        claim="Modern agentic AI systems integrate external tools dynamically through function calling",
+        supporting_text=mirror_text,
+        relevance_score=0.70,
+        content_hash=compute_content_hash(f"Modern agentic AI systems integrate external tools dynamically through function calling {mirror_text}"),
+    )
+    # Distinct claim from same domain
+    ev_same_domain = EvidenceItem(
+        source_url="https://technews.io/articles/agentic-memory",
+        source_title="Agentic Memory in 2026",
+        claim="Long-term memory architectures utilize vector databases and knowledge graphs",
+        supporting_text=same_domain_different_claim,
+        relevance_score=0.88,
+        content_hash=compute_content_hash(f"Long-term memory architectures utilize vector databases and knowledge graphs {same_domain_different_claim}"),
+    )
+    # Distinct claim from different domain
+    ev_other_domain = EvidenceItem(
+        source_url="https://ai-research.org/self-correction",
+        source_title="Self-Correction in Agents",
+        claim="Self-correction loops evaluate intermediate tool outputs",
+        supporting_text=other_domain_claim,
+        relevance_score=0.92,
+        content_hash=compute_content_hash(f"Self-correction loops evaluate intermediate tool outputs {other_domain_claim}"),
+    )
+
+    items = [ev_original, ev_exact_dup, ev_near_dup, ev_same_domain, ev_other_domain]
+    deduped = deduplicate_evidence(items, similarity_threshold=0.75)
+
+    # ev_exact_dup and ev_near_dup should be removed (2 duplicates removed)
+    assert len(deduped) == 3
+    # Original should be retained over the lower-relevance mirror/duplicates
+    urls = {item.source_url for item in deduped}
+    assert "https://technews.io/articles/agentic-tools" in urls
+    assert "https://technews.io/articles/agentic-memory" in urls
+    assert "https://ai-research.org/self-correction" in urls
+    assert "https://aggregator.net/copy" not in urls
+    assert "https://syndicate.org/feed" not in urls
+
+
 # ==============================================================================
 # 4. STRUCTURED REPORT & MARKDOWN EXPORT TESTS
 # ==============================================================================

@@ -5,7 +5,7 @@ Planner module responsible for goal analysis, dynamic plan decomposition, and au
 from typing import Dict, Any, Optional
 from app.agent.state import ResearchAgentState
 from app.agent.llm import get_llm_provider, LLMProvider
-from app.models.schemas import GoalAnalysis, Plan, Task
+from app.models.schemas import GoalAnalysis, Plan, Task, LLMPlan
 from app.utils.logging import TraceLogger, get_logger
 
 logger = get_logger("planner")
@@ -94,11 +94,12 @@ async def generate_plan(
     )
 
     logger.info("Generating dynamic execution plan...")
-    plan: Plan = await provider.generate_structured(
+    raw_plan = await provider.generate_structured(
         prompt=prompt,
-        response_schema=Plan,
+        response_schema=LLMPlan,
         system_instruction=system_instruction,
     )
+    plan: Plan = raw_plan.to_runtime_plan() if hasattr(raw_plan, "to_runtime_plan") else raw_plan
 
     # Print visible planning trace in CLI
     TraceLogger.print_plan(query=plan.query or query, rationale=plan.rationale, tasks=plan.tasks)
@@ -143,11 +144,12 @@ async def replan_research(
     )
 
     logger.info("Generating revised plan via LLM...")
-    revised_plan: Plan = await provider.generate_structured(
+    raw_revised_plan = await provider.generate_structured(
         prompt=prompt,
-        response_schema=Plan,
+        response_schema=LLMPlan,
         system_instruction=system_instruction,
     )
+    revised_plan: Plan = raw_revised_plan.to_runtime_plan() if hasattr(raw_revised_plan, "to_runtime_plan") else raw_revised_plan
 
     TraceLogger.print_plan(
         query=revised_plan.query or query,
