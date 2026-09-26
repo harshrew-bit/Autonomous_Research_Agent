@@ -82,6 +82,26 @@ class TraceLogger:
         console.print("[dim green]✔ Plan generated successfully and ready for orchestration.[/dim green]\n")
 
     @staticmethod
+    def print_tool_start(tool_name: str, target: str) -> None:
+        """Display concise tool execution initiation."""
+        console.print(f"\n[bold cyan][TOOL][/bold cyan] [bold]{tool_name}[/bold]")
+        console.print(f"  [dim]Target/Input:[/dim] {target}")
+
+    @staticmethod
+    def print_tool_success(tool_name: str, summary: str) -> None:
+        """Display tool completion summary."""
+        console.print(f"  [bold green]✓ {tool_name} completed:[/bold green] {summary}")
+
+    @staticmethod
+    def print_tool_error(tool_name: str, target: str, error: str, recovery_hint: Optional[str] = None) -> None:
+        """Display tool execution failure with optional recovery hint."""
+        console.print(f"\n[bold red][TOOL ERROR][/bold red] [bold]{tool_name}[/bold]")
+        console.print(f"  [dim]Target:[/dim] {target}")
+        console.print(f"  [red]✗ Failure:[/red] {error}")
+        if recovery_hint:
+            console.print(f"  [magenta]↳ Recovery hint:[/magenta] {recovery_hint}")
+
+    @staticmethod
     def print_step(step_number: int, task_desc: str, tool_name: str) -> None:
         """Display step start trace."""
         console.print(f"[bold green]▶ Step {step_number}:[/bold green] Invoking tool [cyan]{tool_name}[/cyan] for '{task_desc}'")

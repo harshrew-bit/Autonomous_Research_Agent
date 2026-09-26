@@ -75,3 +75,11 @@ def test_graph_compilation():
     """Verify build_research_graph compiles a valid StateGraph."""
     graph = build_research_graph()
     assert graph is not None
+
+
+def test_search_provider_factory():
+    """Verify search provider factory returns MockSearchProvider when provider='mock'."""
+    from app.tools.web_search import get_search_provider, MockSearchProvider
+    provider = get_search_provider("mock")
+    assert isinstance(provider, MockSearchProvider)
+

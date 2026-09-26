@@ -2,6 +2,7 @@
 Pydantic schemas and data types defining state, goal analysis, tasks, plans, tool IO, and output reports.
 """
 
+from datetime import datetime, timezone
 from enum import Enum
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
@@ -64,17 +65,40 @@ class Plan(BaseModel):
 
 
 class SearchResultItem(BaseModel):
+    """A single result item returned from a web search provider."""
     title: str = Field(description="Page or article title")
     url: str = Field(description="Canonical URL of search result")
     snippet: str = Field(description="Short text summary or snippet")
+    source: Optional[str] = Field(default=None, description="Source domain or publication name")
+    published_at: Optional[str] = Field(default=None, description="Publication timestamp if available")
+    relevance_score: Optional[float] = Field(default=None, description="Relevance score from provider if available")
+
+
+class SearchResponse(BaseModel):
+    """Structured response container for web search queries."""
+    query: str = Field(description="Original search query string")
+    results: List[SearchResultItem] = Field(default_factory=list, description="List of search result items")
+    provider: str = Field(default="tavily", description="Name of search provider used")
+    success: bool = Field(default=True, description="Whether the search request succeeded")
+    error: Optional[str] = Field(default=None, description="Error message if search failed")
 
 
 class FetchedPage(BaseModel):
-    url: str = Field(description="URL of fetched web page")
+    """Structured result returned by the page fetcher tool."""
+    url: str = Field(description="Target URL requested")
+    final_url: Optional[str] = Field(default=None, description="Final URL after following redirects")
     title: Optional[str] = Field(default=None, description="Page title extracted from DOM")
-    content: str = Field(description="Cleaned main text content")
-    content_hash: str = Field(description="SHA-256 hash of extracted text for deduplication")
-    text_length: int = Field(description="Character count of extracted content")
+    content: str = Field(default="", description="Cleaned readable text content extracted from page")
+    content_hash: str = Field(default="", description="SHA-256 hash of extracted text for deduplication")
+    text_length: int = Field(default=0, description="Character count of extracted content")
+    status_code: Optional[int] = Field(default=None, description="HTTP response status code")
+    content_type: Optional[str] = Field(default=None, description="MIME content type header")
+    success: bool = Field(default=True, description="Whether page fetching and extraction succeeded")
+    error: Optional[str] = Field(default=None, description="Error message if fetching failed")
+    fetched_at: str = Field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat(),
+        description="ISO 8601 UTC timestamp of fetch operation"
+    )
 
 
 class ResearchEvidence(BaseModel):
